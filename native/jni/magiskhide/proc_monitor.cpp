@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <unistd.h>
+#include <dirent.h>
 #include <fcntl.h>
 #include <signal.h>
 #include <pthread.h>
@@ -79,15 +80,32 @@ void update_uid_map() {
 	mutex_guard lock(monitor_lock);
 	uid_proc_map.clear();
 	string data_path(APP_DATA_DIR);
-	data_path += "/0/";
+	vector<string> users;
+	auto dirp = opendir(APP_DATA_DIR);
+	if (!dirp) return;
+	struct dirent *ent;
+	while ((ent = readdir(dirp)) != nullptr) {
+		if (dirp->d_name[0] != '.')
+			users.emplace_back(dirp->d_name);
+	}
+	closedir(dirp);
+	data_path += "/";
 	size_t len = data_path.length();
 	struct stat st;
 	for (auto &hide : hide_set) {
 		data_path.erase(data_path.begin() + len, data_path.end());
-		data_path += hide.first;
-		if (stat(data_path.data(), &st))
-			continue;
-		uid_proc_map[st.st_uid].emplace_back(hide.second);
+		bool found = false;
+		for (auto &user : users) {
+			data_path += user;
+			data_path += "/";
+			data_path += hide.first;
+			if (stat(data_path.data(), &st) == 0) {
+				found = true;
+				break;
+			}
+		}
+		if (found)
+			uid_proc_map[st.st_uid % 100000].emplace_back(hide.second);
 	}
 }
 
